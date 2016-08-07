@@ -10,6 +10,10 @@ Building
 To build and test C-library, just run the following commands:
 
     $ make clean all
+    
+Other
+-------
+[My other projects on Bitbucket](https://bitbucket.org/Tepex/)
 
 License
 -------
