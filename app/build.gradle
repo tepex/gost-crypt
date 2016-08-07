@@ -1,0 +1,150 @@
+import java.util.regex.Pattern
+
+buildscript {
+	repositories {
+		jcenter()
+	}
+	
+	dependencies {
+		classpath 'com.android.tools.build:gradle:2.0.0'
+		classpath 'commons-net:commons-net:3.3'
+	}
+}
+
+apply plugin: 'com.android.model.application'
+
+dependencies {
+	compile 'com.android.support:support-v4:23.0.1'
+	compile 'com.android.support:appcompat-v7:23.0.1'
+	compile 'com.android.support:support-annotations:23.0.1'
+	compile 'com.android.support:design:23.0.1'
+}
+
+model {
+	android {
+		compileSdkVersion = 23
+		buildToolsVersion = '23'
+		
+		defaultConfig {
+			applicationId = 'net.tepex.crypto.app'
+			minSdkVersion.apiLevel = 7
+			targetSdkVersion.apiLevel = 23
+			multiDexEnabled = true
+		}
+		ndk {
+			moduleName = 'streebog'
+			toolchain = 'clang'
+			CFlags.addAll(['-Wall'])
+			CFlags.addAll(['-O2'])
+		}
+		buildTypes {
+			release {
+				minifyEnabled = false
+				proguardFiles.add(file('proguard-rules.txt'))
+			}
+		}
+		productFlavors {
+			// for detailed abiFilter descriptions, refer to "Supported ABIs" @
+			// https://developer.android.com/ndk/guides/abis.html#sa
+			create("arm") {
+				ndk.abiFilters.add("armeabi")
+			}
+			create("arm7") {
+				ndk.abiFilters.add("armeabi-v7a")
+			}
+			create("arm8") {
+				ndk.abiFilters.add("arm64-v8a")
+			}
+			create("x86") {
+				ndk.abiFilters.add("x86")
+			}
+			create("x86-64") {
+				ndk.abiFilters.add("x86_64")
+			}
+			create("mips") {
+				ndk.abiFilters.add("mips")
+			}
+			create("mips-64") {
+				ndk.abiFilters.add("mips64")
+			}
+			// To include all cpu architectures, leaves abiFilters empty
+			create("all")
+		}
+		
+		packagingOptions {
+			exclude 'META-INF/DEPENDENCIES.txt'
+			exclude 'META-INF/LICENSE.txt'
+			exclude 'META-INF/LGPL2.1'
+			exclude 'META-INF/NOTICE.txt'
+			exclude 'META-INF/maven/commons-io/commons-io/pom.xml'
+			exclude 'META-INF/maven/commons-io/commons-io/pom.properties'
+		}
+	}
+}
+
+tasks.withType(JavaCompile) {
+	options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+}
+
+task('incrementVersionName') << {
+	def appName
+	//Check if an applicationName property is supplied (gradle.properties); if not use the name of the parent project.
+	if (project.hasProperty("applicationName")) {
+		appName = applicationName
+	}
+	else {
+		appName = parent.name
+	}
+	def versionName = manifestVersionName()
+	
+	android.applicationVariants.all { variant ->
+		variant.outputs.each { output ->
+			def newApkName
+			//If there's no ZipAlign task it means that our artifact will be unaligned and we need to mark it as such.
+			if (output.zipAlign) {
+				newApkName = "${appName}-${output.baseName}-${versionName}.apk"
+			} else {
+				newApkName = "${appName}-${output.baseName}-${versionName}-unaligned.apk"
+			}
+			output.outputFile = new File(output.outputFile.parent, newApkName)
+		}
+	}
+}
+
+tasks.whenTaskAdded { task ->
+    if (task.name == 'compileReleaseSources' || task.name == 'compileDebugSources') {
+        task.dependsOn 'incrementVersionName'
+    }
+}
+
+def manifestVersionName() {
+	def manifestFile = file("src/main/AndroidManifest.xml")
+	def manifestText = manifestFile.getText()
+	
+	def patternVersionCode = Pattern.compile("versionCode=\"(\\d+)\"")
+	def matcherVersionCode = patternVersionCode.matcher(manifestText)
+	matcherVersionCode.find()
+	def versionCode = Integer.parseInt(matcherVersionCode.group(1))+1
+	def minorVersion = versionCode / 100
+	def buildVersion = versionCode % 100
+	manifestText = matcherVersionCode.replaceAll("versionCode=\""+versionCode+"\"")
+	
+	def patternVersionNumber = Pattern.compile("versionName=\"(\\d+)\\.(\\d+)\\.(\\d+)\"")
+	def matcherVersionNumber = patternVersionNumber.matcher(manifestText)
+	matcherVersionNumber.find()
+	def majorVersion = Integer.parseInt(matcherVersionNumber.group(1))
+	
+	//def versionName = majorVersion+"."+minorVersion+ "."+buildVersion
+	if(versionCode % 100 == 0) {
+		minorVersion += '.'
+	}
+	if(versionCode % 10 == 0) {
+		minorVersion += '0'
+	}
+	def versionName = majorVersion+"."+minorVersion
+	println 'versionName='+versionName
+	manifestText = matcherVersionNumber.replaceAll("versionName=\""+versionName+"\"")
+	manifestFile.write(manifestText)
+	return versionName
+}
+
